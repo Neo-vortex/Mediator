@@ -2,10 +2,11 @@
 
 internal sealed record CompilationModel
 {
-    private const int ManyMessagesTreshold = 16;
+    private readonly int _manyMessagesTreshold;
 
-    public CompilationModel(string mediatorNamespace, string generatorVersion)
+    public CompilationModel(string mediatorNamespace, string generatorVersion, int manyMessagesTreshold = 16)
     {
+        _manyMessagesTreshold = manyMessagesTreshold;
         MediatorNamespace = mediatorNamespace;
         GeneratorVersion = generatorVersion;
         HasErrors = true;
@@ -52,9 +53,13 @@ internal sealed record CompilationModel
         string? singletonServiceLifetime,
         bool isTestRun,
         bool configuredViaAttribute,
-        bool generateTypesAsInternal
+        bool generateTypesAsInternal,
+        string? cachingMode,
+        string? cachingModeShort,
+        int manyMessagesTreshold = 16
     )
     {
+        _manyMessagesTreshold = manyMessagesTreshold;
         MediatorNamespace = mediatorNamespace;
         GeneratorVersion = generatorVersion;
         HasErrors = hasErrors;
@@ -67,7 +72,12 @@ internal sealed record CompilationModel
         ServiceLifetimeIsSingleton = serviceLifetimeShort == "Singleton";
         ServiceLifetimeIsScoped = serviceLifetimeShort == "Scoped";
         ServiceLifetimeIsTransient = serviceLifetimeShort == "Transient";
-        ContainerMetadataField = ServiceLifetimeIsSingleton ? "_containerMetadata.Value" : "_containerMetadata";
+        CachingMode = cachingMode;
+        CachingModeShort = cachingModeShort;
+        CachingModeIsEager = cachingModeShort != "Lazy";
+        CachingModeIsLazy = cachingModeShort == "Lazy";
+        ContainerMetadataField =
+            ServiceLifetimeIsSingleton && CachingModeIsEager ? "_containerMetadata.Value" : "_containerMetadata";
         InternalsNamespace = $"{MediatorNamespace}.Internals";
         TotalMessages = requestMessages.Count + notificationMessages.Count;
         NotificationPublisherType = notificationPublisherType;
@@ -107,9 +117,9 @@ internal sealed record CompilationModel
 
             var isStreaming =
                 r.MessageKind
-                    is RequestMessageKind.StreamRequest
-                        or RequestMessageKind.StreamQuery
-                        or RequestMessageKind.StreamCommand;
+                is RequestMessageKind.StreamRequest
+                    or RequestMessageKind.StreamQuery
+                    or RequestMessageKind.StreamCommand;
             if (isStreaming && r.ResponseIsValueType)
                 HasAnyValueTypeStreamResponse = true;
         }
@@ -131,13 +141,13 @@ internal sealed record CompilationModel
         HasStreamCommands = iStreamCommandMessages.Count > 0;
         HasNotifications = notificationMessages.Count > 0;
 
-        HasManyRequests = iRequestMessages.Count > ManyMessagesTreshold;
-        HasManyCommands = iCommandMessages.Count > ManyMessagesTreshold;
-        HasManyQueries = iQueryMessages.Count > ManyMessagesTreshold;
-        HasManyStreamRequests = iStreamRequestMessages.Count > ManyMessagesTreshold;
-        HasManyStreamQueries = iStreamQueryMessages.Count > ManyMessagesTreshold;
-        HasManyStreamCommands = iStreamCommandMessages.Count > ManyMessagesTreshold;
-        HasManyNotifications = notificationMessages.Count > ManyMessagesTreshold;
+        HasManyRequests = iRequestMessages.Count > _manyMessagesTreshold;
+        HasManyCommands = iCommandMessages.Count > _manyMessagesTreshold;
+        HasManyQueries = iQueryMessages.Count > _manyMessagesTreshold;
+        HasManyStreamRequests = iStreamRequestMessages.Count > _manyMessagesTreshold;
+        HasManyStreamQueries = iStreamQueryMessages.Count > _manyMessagesTreshold;
+        HasManyStreamCommands = iStreamCommandMessages.Count > _manyMessagesTreshold;
+        HasManyNotifications = notificationMessages.Count > _manyMessagesTreshold;
 
         HasAnyRequest = HasRequests || HasCommands || HasQueries;
         HasAnyStreamRequest = HasStreamRequests || HasStreamQueries || HasStreamCommands;
@@ -156,6 +166,10 @@ internal sealed record CompilationModel
     public bool ServiceLifetimeIsSingleton { get; }
     public bool ServiceLifetimeIsScoped { get; }
     public bool ServiceLifetimeIsTransient { get; }
+    public string? CachingMode { get; }
+    public string? CachingModeShort { get; }
+    public bool CachingModeIsEager { get; }
+    public bool CachingModeIsLazy { get; }
     public string ContainerMetadataField { get; }
     public string InternalsNamespace { get; }
     public int TotalMessages { get; }
@@ -198,4 +212,13 @@ internal sealed record CompilationModel
     public bool HasAnyRequest { get; }
     public bool HasAnyStreamRequest { get; }
     public bool HasAnyValueTypeStreamResponse { get; }
+
+    public bool CrossedManyMessagesThreshold =>
+        HasManyRequests
+        || HasManyCommands
+        || HasManyQueries
+        || HasManyStreamRequests
+        || HasManyStreamQueries
+        || HasManyStreamCommands
+        || HasManyNotifications;
 }

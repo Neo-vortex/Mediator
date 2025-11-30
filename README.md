@@ -1,4 +1,3 @@
-[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/martinothamar/Mediator/build.yml?branch=main)](https://github.com/martinothamar/Mediator/actions)
 [![GitHub](https://img.shields.io/github/license/martinothamar/Mediator?style=flat-square)](https://github.com/martinothamar/Mediator/blob/main/LICENSE)
 [![Downloads](https://img.shields.io/nuget/dt/mediator.abstractions?style=flat-square)](https://www.nuget.org/packages/Mediator.Abstractions/)<br/>
 [![Abstractions NuGet current](https://img.shields.io/nuget/v/Mediator.Abstractions?label=Mediator.Abstractions)](https://www.nuget.org/packages/Mediator.Abstractions)
@@ -6,27 +5,37 @@
 [![Abstractions NuGet prerelease](https://img.shields.io/nuget/vpre/Mediator.Abstractions?label=Mediator.Abstractions)](https://www.nuget.org/packages/Mediator.Abstractions)
 [![SourceGenerator NuGet prerelease](https://img.shields.io/nuget/vpre/Mediator.SourceGenerator?label=Mediator.SourceGenerator)](https://www.nuget.org/packages/Mediator.SourceGenerator)<br/>
 
+> [!NOTE]
+> **Want to contribute?** See the [Contributing Guide](CONTRIBUTING.md) for information on building, testing, and submitting changes.
+
 # Mediator
 
-This is a high performance .NET implementation of the Mediator pattern using the [source generators](https://devblogs.microsoft.com/dotnet/introducing-c-source-generators/) feature introduced in .NET 5.
-The API and usage is mostly based on the great [MediatR](https://github.com/jbogard/MediatR) library, with some deviations to allow for better performance.
-Packages are .NET Standard 2.0 compatible.
+This is a high performance .NET implementation of the Mediator pattern using [source generators](https://devblogs.microsoft.com/dotnet/introducing-c-source-generators/).
+It provides a similar API to the great [MediatR](https://github.com/LuckyPennySoftware/MediatR) library while delivering better performance and full Native AOT support.
+Packages target .NET Standard 2.0 and .NET 8.
 
-The mediator pattern is great for implementing cross cutting concern (logging, metrics, etc) and avoiding "fat" constructors due to lots of injected services.
+The mediator pattern is great for implementing cross cutting concerns (logging, metrics, etc) and avoiding "fat" constructors due to lots of injected services.
 
 Goals for this library
 * High performance
-  * Runtime performance can be the same for both runtime reflection and source generator based approaches, but it's easier to optimize in the latter case
+  * Efficient and fast by default, slower configurations are opt-in (in the spirit of [non-pessimization](https://stackoverflow.com/questions/32618848/what-is-pessimization))
+  * See [benchmarks](#2-benchmarks) for comparisons
 * AOT friendly
-  * MS are investing time in various AOT scenarios, and for example iOS requires AOT compilation
+  * Full Native AOT support without reflection or runtime code generation
+  * Cold start performance matters for lots of scenarios (serverless, edge, apps, mobile)
 * Build time errors instead of runtime errors
-  * The generator includes diagnostics, i.e. if a handler is not defined for a request, a warning is emitted
+  * The generator includes diagnostics (example: if a handler is not defined for a request, a warning is emitted)
+  * Catch configuration mistakes during development, not during runtime
+* Stability
+  * Stable API that only changes for good reason - fewer changes means less patching for you
+  * Follows [semantic versioning](#7-versioning) strictly
 
-In particular, source generators in this library is used to
+In particular, a source generator in this library is used to
 * Generate code for DI registration
-* Generate code for `IMediator` implementation
-  * Request/Command/Query `Send` methods are monomorphized (1 method per T), the generic `ISender.Send` methods rely on these
-  * You can use both `IMediator` and `Mediator`, the latter allows for better performance
+* Generate code for the `IMediator` implementation
+  * Request/Command/Query `Send` methods are monomorphized
+  * Fast dictionary lookups for methods taking `object`/generic arguments (takes effect above a certain project size threshold)
+  * You can use both `IMediator` and the concrete `Mediator` class, the latter allows for better performance
 * Generate diagnostics related messages and message handlers
 
 NuGet packages:
@@ -59,6 +68,7 @@ See this great video by [@Elfocrash / Nick Chapsas](https://github.com/Elfocrash
     - [3.3. Pipeline types](#33-pipeline-types)
       - [3.3.1. Message validation example](#331-message-validation-example)
       - [3.3.2. Error logging example](#332-error-logging-example)
+      - [3.3.3. Stream message processing example](#333-stream-message-processing-example)
     - [3.4. Configuration](#34-configuration)
   - [4. Getting started](#4-getting-started)
     - [4.1. Add packages](#41-add-packages)
@@ -74,6 +84,7 @@ See this great video by [@Elfocrash / Nick Chapsas](https://github.com/Elfocrash
   - [5. Diagnostics](#5-diagnostics)
   - [6. Differences from MediatR](#6-differences-from-mediatr)
   - [7. Versioning](#7-versioning)
+  - [8. Related projects](#8-related-projects)
 
 ## 2. Benchmarks
 
@@ -149,6 +160,8 @@ These types are used in correlation with the message types above.
 * `IStreamPipelineBehavior<TMessage, TResponse>`
 * `MessagePreProcessor<TMessage, TResponse>`
 * `MessagePostProcessor<TMessage, TResponse>`
+* `StreamMessagePreProcessor<TMessage, TResponse>`
+* `StreamMessagePostProcessor<TMessage, TResponse>`
 * `MessageExceptionHandler<TMessage, TResponse, TException>`
 
 #### 3.3.1. Message validation example
@@ -254,6 +267,54 @@ public sealed class ErrorLoggingBehaviour<TMessage, TResponse> : MessageExceptio
 services.AddSingleton(typeof(IPipelineBehavior<,>), typeof(ErrorLoggingBehaviour<,>))
 ```
 
+#### 3.3.3. Stream message processing example
+
+For streaming messages (e.g., `IStreamRequest<TResponse>`, `IStreamCommand<TResponse>`, `IStreamQuery<TResponse>`), you can use `StreamMessagePreProcessor` and `StreamMessagePostProcessor` to handle pre/post-processing logic.
+NOTE: `StreamMessagePostProcessor` implementations will need to buffer all responses so that they can be passed as an `IReadOnlyList<>` to the `Handle` method.
+
+```csharp
+// Stream message pre-processor - runs once before stream starts
+public sealed class StreamLoggingPreProcessor<TMessage, TResponse> : StreamMessagePreProcessor<TMessage, TResponse>
+    where TMessage : notnull, IStreamMessage
+{
+    private readonly ILogger<StreamLoggingPreProcessor<TMessage, TResponse>> _logger;
+
+    public StreamLoggingPreProcessor(ILogger<StreamLoggingPreProcessor<TMessage, TResponse>> logger)
+    {
+        _logger = logger;
+    }
+
+    protected override ValueTask Handle(TMessage message, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Starting stream processing for {MessageType}", typeof(TMessage).Name);
+        return default;
+    }
+}
+
+// Stream message post-processor - runs once after stream completes
+public sealed class StreamLoggingPostProcessor<TMessage, TResponse> : StreamMessagePostProcessor<TMessage, TResponse>
+    where TMessage : notnull, IStreamMessage
+{
+    private readonly ILogger<StreamLoggingPostProcessor<TMessage, TResponse>> _logger;
+
+    public StreamLoggingPostProcessor(ILogger<StreamLoggingPostProcessor<TMessage, TResponse>> logger)
+    {
+        _logger = logger;
+    }
+
+    protected override ValueTask Handle(TMessage message, IReadOnlyList<TResponse> responses, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Stream completed with {Count} items", responses.Count);
+        return default;
+    }
+}
+
+// Register as IStreamPipelineBehavior<,>
+// NOTE: for NativeAOT, you should use the pipeline configuration on `MediatorOptions` instead (during `AddMediator`)
+services.AddSingleton(typeof(IStreamPipelineBehavior<,>), typeof(StreamLoggingPreProcessor<,>))
+services.AddSingleton(typeof(IStreamPipelineBehavior<,>), typeof(StreamLoggingPostProcessor<,>))
+```
+
 ### 3.4. Configuration
 
 There are two ways to configure Mediator. Configuration values are needed during compile-time since this is a source generator:
@@ -271,11 +332,13 @@ services.AddMediator((MediatorOptions options) =>
     options.Assemblies = [typeof(...)];
     options.PipelineBehaviors = [];
     options.StreamPipelineBehaviors = [];
+    // Only available from v3.1:
+    options.CachingMode = CachingMode.Eager;
 });
 
 // or
 
-[assembly: MediatorOptions(Namespace = "SimpleConsole.Mediator", ServiceLifetime = ServiceLifetime.Singleton)]
+[assembly: MediatorOptions(Namespace = "SimpleConsole.Mediator", ServiceLifetime = ServiceLifetime.Singleton, CachingMode = CachingMode.Eager)]
 ```
 
 * `Namespace` - where the `IMediator` implementation is generated
@@ -288,6 +351,9 @@ services.AddMediator((MediatorOptions options) =>
 * `Assemblies` - which assemblies the source generator should scan for messages and handlers. When not used the source generator will scan all references assemblies (same behavior as v2)
 * `PipelineBehaviors`/`StreamPipelineBehaviors` - ordered array of types used for the pipeline
   * The source generator adds DI regristrations manually as oppposed to open generics registrations, to support NativeAOT. You can also manually add pipeline behaviors to the DI container if you are not doing AoT compilation.
+* `CachingMode` - controls when Mediator initialization occurs
+  * `Eager` (default) - all handler wrappers and lookups are initialized on first Mediator access, best for long-running applications where startup cost is amortized
+  * `Lazy` - handler wrappers are initialized on-demand as messages are processed, best for cold start scenarios (serverless, Native AOT) where minimal initialization is preferred
 
 Note that since parsing of these options is done during compilation/source generation, all values must be compile time constants.
 In addition, since some types are not valid attributes parameter types (such as arrays/lists), some configuration is only available through `AddMediator`/`MediatorOptions` and not the assembly attribute.
@@ -577,7 +643,7 @@ Since this is a source generator, diagnostics are also included. Examples below
 ![Multiple request handlers found](/img/multiple_request_handlers.png "Multiple request handlers found")
 
 
-## 6. Differences from [MediatR](https://github.com/jbogard/MediatR)
+## 6. Differences from [MediatR](https://github.com/LuckyPennySoftware/MediatR)
 
 This is a work in progress list on the differences between this library and MediatR.
 
@@ -597,3 +663,14 @@ For versioning this library I try to follow [semver 2.0](https://semver.org/) as
 * Major bump for breaking changes
 * Minor bump for new backward compatible features
 * Patch bump for bugfixes
+
+## 8. Related projects
+
+There are various options for Mediator implementations in the .NET ecosystem. Here are some good ones that you might consider:
+
+* [MediatR](https://github.com/LuckyPennySoftware/MediatR) - the original reflection-based implementation (in-memory only)
+* Mediator (this library) - keeps a very similar API to MediatR, but with improved performance and NativeAoT-friendliness (in-memory only) in part due to sourcegenerators
+* [Foundatio.Mediator](https://github.com/FoundatioFx/Foundatio.Mediator) - different, conventions based API. Also sourcegenerator-based (in-memory only)
+* [Wolverine](https://wolverinefx.net/) (part of the critterstack) - also conventions based, is a larger framework that also offers async/distributed messaging
+* [MassTransit](https://masstransit.io/) - also offers a mediator implementation, and also offers async/distributed messaging
+

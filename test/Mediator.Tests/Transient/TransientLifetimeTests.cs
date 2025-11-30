@@ -22,8 +22,8 @@ public sealed class TransientLifetimeTests
 
         var (sp, _) = Fixture.GetMediator();
 
-        var handler1 = sp.GetRequiredService<TransientTestRequestHandler>();
-        var handler2 = sp.GetRequiredService<TransientTestRequestHandler>();
+        var handler1 = sp.GetRequiredService<IRequestHandler<TransientTest, SomeResponse>>();
+        var handler2 = sp.GetRequiredService<IRequestHandler<TransientTest, SomeResponse>>();
 
         Assert.NotNull(handler1);
         Assert.NotNull(handler2);
@@ -39,6 +39,8 @@ public sealed class TransientLifetimeTests
 
         services.AddMediator();
 
+        var ct = TestContext.Current.CancellationToken;
+
         await using (
             var sp = services.BuildServiceProvider(
                 new ServiceProviderOptions() { ValidateOnBuild = true, ValidateScopes = true }
@@ -49,9 +51,9 @@ public sealed class TransientLifetimeTests
             {
                 var mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
 
-                await mediator.Send(new TransientTest(Guid.NewGuid()));
-                await mediator.Send(new TransientTest(Guid.NewGuid()));
-                await mediator.Send(new TransientTest(Guid.NewGuid()));
+                await mediator.Send(new TransientTest(Guid.NewGuid()), ct);
+                await mediator.Send(new TransientTest(Guid.NewGuid()), ct);
+                await mediator.Send(new TransientTest(Guid.NewGuid()), ct);
 
                 Assert.All(TransientTestRequestHandler.CreatedHandlers, h => Assert.False(h.Disposed));
             }
@@ -60,9 +62,9 @@ public sealed class TransientLifetimeTests
 
             {
                 var mediator = sp.GetRequiredService<IMediator>();
-                await mediator.Send(new TransientTest(Guid.NewGuid()));
-                await mediator.Send(new TransientTest(Guid.NewGuid()));
-                await mediator.Send(new TransientTest(Guid.NewGuid()));
+                await mediator.Send(new TransientTest(Guid.NewGuid()), ct);
+                await mediator.Send(new TransientTest(Guid.NewGuid()), ct);
+                await mediator.Send(new TransientTest(Guid.NewGuid()), ct);
             }
         }
 
@@ -78,6 +80,8 @@ public sealed class TransientLifetimeTests
 
         services.AddMediator();
 
+        var ct = TestContext.Current.CancellationToken;
+
         await using (
             var sp = services.BuildServiceProvider(
                 new ServiceProviderOptions() { ValidateOnBuild = true, ValidateScopes = true }
@@ -86,9 +90,9 @@ public sealed class TransientLifetimeTests
         {
             var mediator = sp.GetRequiredService<IMediator>();
 
-            await mediator.Send(new TransientTest(Guid.NewGuid()));
-            await mediator.Send(new TransientTest(Guid.NewGuid()));
-            await mediator.Send(new TransientTest(Guid.NewGuid()));
+            await mediator.Send(new TransientTest(Guid.NewGuid()), ct);
+            await mediator.Send(new TransientTest(Guid.NewGuid()), ct);
+            await mediator.Send(new TransientTest(Guid.NewGuid()), ct);
 
             Assert.All(TransientTestRequestHandler.CreatedHandlers, h => Assert.False(h.Disposed));
         }

@@ -79,19 +79,20 @@ public sealed class RequestInheritanceTests
     [Fact]
     public async Task Test_Create()
     {
+        var ct = TestContext.Current.CancellationToken;
         var (sp, mediator) = Fixture.GetMediator();
 
         var id = Guid.NewGuid();
         var idForN = Guid.NewGuid();
 
-        var response = await mediator.Send(new CreateRequest(id));
+        var response = await mediator.Send(new CreateRequest(id), ct);
         Assert.Equal(id, response.Id);
 
-        var responseWithN = await mediator.Send(new CreateRequestWithN(idForN, 3));
+        var responseWithN = await mediator.Send(new CreateRequestWithN(idForN, 3), ct);
         Assert.Equal(idForN, responseWithN.Id);
         Assert.Equal(3, responseWithN.N);
 
-        var handler = sp.GetRequiredService<CreateHandler>();
+        var handler = sp.GetRequiredService<IRequestHandler<CreateRequest, CreateResponse>>();
         Assert.NotNull(handler);
         Assert.Contains(id, CreateHandler.Ids);
         Assert.Contains(idForN, CreateHandler.IdsForN);

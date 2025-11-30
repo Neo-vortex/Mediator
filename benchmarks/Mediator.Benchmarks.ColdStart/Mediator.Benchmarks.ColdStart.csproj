@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <LangVersion>latest</LangVersion>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath>Generated</CompilerGeneratedFilesOutputPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(EnableAot)' == 'true'">
+    <PublishAot>true</PublishAot>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(EnableAotOptimized)' == 'true'">
+    <PublishAot>true</PublishAot>
+    <OptimizationPreference>Speed</OptimizationPreference>
+    <PublishTrimmed>true</PublishTrimmed>
+    <DebuggerSupport>false</DebuggerSupport>
+    <EnableUnsafeUTF7Encoding>false</EnableUnsafeUTF7Encoding>
+    <Http3Support>false</Http3Support>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+    <XmlResolverIsNetworkingEnabledByDefault>false</XmlResolverIsNetworkingEnabledByDefault>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="$(CompilerGeneratedFilesOutputPath)/**/*.cs" />
+    <None Include="$(CompilerGeneratedFilesOutputPath)/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="MediatR" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference
+      Include="..\..\src\Mediator.SourceGenerator\Mediator.SourceGenerator.csproj"
+      OutputItemType="Analyzer"
+    />
+    <ProjectReference Include="..\..\src\Mediator\Mediator.csproj" />
+  </ItemGroup>
+</Project>
